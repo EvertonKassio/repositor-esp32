@@ -26,8 +26,18 @@ void loop() {
   lv_tick_inc(agora - ultimo_ms);
   ultimo_ms = agora;
 
-  lv_timer_handler();
+  // Processa as mensagens da mesa em todas as iteracoes (sem esperar 300 ms).
   mixer_link_loop();
+
+  // Recalcula os indicadores visuais de todos os canais a cada 300 ms,
+  // mesmo quando nao chegam novas mensagens SETD.
+  static uint32_t ultima_atualizacao_canais = 0;
+  if ((uint32_t)(agora - ultima_atualizacao_canais) >= 300) {
+    ultima_atualizacao_canais = agora;
+    ui_refresh_state();
+  }
+
+  lv_timer_handler();
   ui_set_status(mixer_link_status());
   delay(2);
 }

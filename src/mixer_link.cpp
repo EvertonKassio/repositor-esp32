@@ -35,6 +35,26 @@ static WebSocketsClient web_socket;
 static bool websocket_iniciado = false;
 static uint32_t mgmask_atual = 0;
 static bool mgmask_valido = false;
+// Consulta experimental: GETD nao foi confirmado para todos os firmwares Ui24R.
+// Nao envia SETD durante a consulta: nenhuma alteracao e feita na mesa.
+static constexpr uint32_t CONSULTA_MS = 300;
+static uint32_t ultima_consulta_ms = 0;
+static uint32_t respostas_consulta = 0;
+static bool consulta_aguardando = false;
+static uint32_t consulta_enviada_ms = 0;
+static void consultar_estado_mesa() {
+  // Envia todos os campos em um unico quadro, evitando 45 quadros por ciclo.
+  // A compatibilidade de GETD e de comandos agrupados precisa ser testada.
+  String pedido = "3:::GETD^mgmask";
+  for (int i = 0; i < 22; ++i) {
+    pedido += "\nGETD^i." + String(i) + ".mute";
+    pedido += "\nGETD^i." + String(i) + ".forceunmute";
+  }
+  web_socket.sendTXT(pedido);
+  consulta_aguardando = true;
+  consulta_enviada_ms = millis();
+}
+
 
 static void tratar_mensagem_mesa(const char *mensagem) {
   if (strncmp(mensagem, "2::", 3) == 0) {
@@ -66,10 +86,13 @@ static void websocket_event(WStype_t tipo, uint8_t *payload, size_t length) {
       status_atual = STATUS_CONECTADO;
       Serial.println("[mesa] WebSocket conectado");
       web_socket.sendTXT("3:::ALIVE");
+      ultima_consulta_ms = millis() - CONSULTA_MS;
+      consulta_aguardando = false;
       break;
     case WStype_DISCONNECTED:
       status_atual = STATUS_DESCONECTADO;
       Serial.println("[mesa] WebSocket desconectado");
+      consulta_aguardando = false;
       break;
     case WStype_TEXT:
       tratar_mensagem_mesa((const char *)payload);
@@ -128,6 +151,23 @@ void mixer_link_loop() {
       Serial.printf("[mesa] conectando WebSocket ws://%s%s\n", MESA_IP, MESA_WS_PATH);
     }
     web_socket.loop();
+    if (status_atual == STATUS_CONECTADO) {
+      uint32_t agora = millis();
+      if ((uint32_t)(agora - ultima_consulta_ms) >= CONSULTA_MS) {
+        ultima_consulta_ms = agora;
+        // Se a mesa nao responder, a interface conserva o ultimo estado conhecido.
+        // O log permite verificar se o firmware reconhece esta consulta.
+        if (consulta_aguardando &&
+            (uint32_t)(agora - consulta_enviada_ms) >= CONSULTA_MS) {
+          static uint32_t ultimo_aviso = 0;
+          if ((uint32_t)(agora - ultimo_aviso) >= 5000) {
+            ultimo_aviso = agora;
+            Serial.println("[consulta] sem SETD apos GETD; confira suporte do firmware");
+          }
+        }
+        consultar_estado_mesa();
+      }
+    }
     return;
   }
 

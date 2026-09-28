@@ -169,3 +169,21 @@ tools/
   gen_icons.py           gerador dos ícones (não precisa rodar de novo)
   gen_texts.py           gerador dos textos (não precisa rodar de novo)
 ```
+
+
+### Atualizacao dos canais a cada 100 ms
+
+O loop principal processa o WebSocket continuamente e executa `ui_refresh_state()`
+a cada 100 ms usando `millis()`, sem `delay(100)` e sem bloquear a interface.
+Mensagens `SETD` recebidas da mesa tambem provocam atualizacao imediata.
+**Importante:** esta rotina reapresenta o ultimo estado recebido da Ui24R;
+nao solicita uma nova leitura da mesa a cada 100 ms. Para uma consulta
+ativa, e necessario confirmar o comando de leitura suportado pela versao
+do firmware da mesa.
+
+
+### Consulta ativa experimental a cada 300 ms
+
+O firmware envia um quadro WebSocket com `GETD^mgmask` e `GETD^i.N.mute` / `GETD^i.N.forceunmute` para os 22 canais a cada 300 ms, somente quando conectado. As mensagens SETD de resposta, quando recebidas, atualizam imediatamente o estado local e a interface. A tela tambem e redesenhada a cada 300 ms.
+
+**ATENCAO:** nao foi possivel confirmar que GETD ou varios GETD no mesmo quadro sejam aceitos pela versao de firmware da sua mesa. Este firmware e um teste de protocolo, nao uma garantia de consulta funcional. O log serial em 115200 bps avisa quando nao recebe SETD apos a tentativa. O recebimento de SETD espontaneo nao prova que a consulta foi respondida. Se o firmware nao responder, capture os quadros de consulta emitidos pelo navegador oficial e adapte `consultar_estado_mesa()`. Nao ha comando SETD nesta rotina de consulta, para nao alterar o som.
